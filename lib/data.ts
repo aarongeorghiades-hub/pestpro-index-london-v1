@@ -15,6 +15,10 @@ export interface Provider {
   commercial: boolean | null;
   emergency_callout: boolean | null;
   pests_supported: string[] | null;
+
+  // Optional enrichment fields (may not exist yet in your JSON; safe to leave null/undefined)
+  sources?: string[] | null;        // e.g. ["BPCA","NPTA","Yell"]
+  profile_text?: string | null;     // short provider description / extracted copy
 }
 
 const dataDirectory = path.join(process.cwd(), 'data');
@@ -29,7 +33,7 @@ function readJsonFile<T>(filePath: string, fallback: T): T {
 }
 
 // Normalise pest strings so filters match reliably (no inference; just consistent formatting)
-function normalizePest(value: string): string {
+export function normalizePest(value: string): string {
   return value
     .toLowerCase()
     .trim()
@@ -60,10 +64,8 @@ export function getFeaturedProviders(limit: number = 8): Provider[] {
 
   const featuredIds = readJsonFile<string[]>(featuredPath, []).filter(Boolean);
 
-  // Build a map for fast lookup
   const byId = new Map(allProviders.map((p) => [p.canonical_id, p] as const));
 
-  // 1) Explicit featured, in ID-list order
   const explicitFeatured: Provider[] = [];
   for (const id of featuredIds) {
     const p = byId.get(id);
@@ -73,11 +75,10 @@ export function getFeaturedProviders(limit: number = 8): Provider[] {
 
   if (explicitFeatured.length >= limit) return explicitFeatured.slice(0, limit);
 
-  // 2) Deterministic fill (preview set), excluding explicit featured
   const selected = new Set(explicitFeatured.map((p) => p.canonical_id));
   const fillers = allProviders
     .filter((p) => !selected.has(p.canonical_id))
-    .slice() // defensive copy
+    .slice()
     .sort((a, b) => a.canonical_id.localeCompare(b.canonical_id));
 
   const needed = limit - explicitFeatured.length;
@@ -91,7 +92,6 @@ export function getProviderBySlug(slug: string): Provider | undefined {
 
 export function getProvidersByPest(pestSlug: string): Provider[] {
   const allProviders = getAllProviders();
-  // e.g. "bed-bugs" -> "bed bugs"
   const pestName = normalizePest(pestSlug);
 
   return allProviders.filter((p) => {
