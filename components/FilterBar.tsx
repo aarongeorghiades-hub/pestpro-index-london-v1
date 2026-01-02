@@ -1,73 +1,152 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useCallback, useMemo, useState } from 'react';
 
 type Counts = Record<string, number>;
 
-export default function FilterBar({ counts }: { counts: Counts }) {
+type Props = {
+  counts?: Counts;
+};
+
+function asBool(v: string | null): boolean {
+  return v === 'true';
+}
+
+export default function FilterBar({ counts = {} }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
-
-  const get = (k: string) => searchParams.get(k) || '';
 
   const createQueryString = useCallback(
     (name: string, value: string) => {
       const params = new URLSearchParams(searchParams.toString());
-      if (value) params.set(name, value);
-      else params.delete(name);
+      if (value) {
+        params.set(name, value);
+      } else {
+        params.delete(name);
+      }
       return params.toString();
     },
     [searchParams]
   );
 
-  const setParam = (name: string, value: string) => {
-    router.push(`?${createQueryString(name, value)}`, { scroll: false });
+  const handleFilterChange = (name: string, value: string) => {
+    const qs = createQueryString(name, value);
+    router.push(qs ? `?${qs}` : '?', { scroll: false });
   };
 
-  const toggleBool = (name: string, on: boolean) => {
-    setParam(name, on ? 'true' : '');
+  const handleToggle = (name: string, checked: boolean) => {
+    handleFilterChange(name, checked ? 'true' : '');
   };
 
   const clearAll = () => {
-    router.push(`/london/pest-control`, { scroll: false });
+    router.push('?', { scroll: false });
   };
 
-  const boolChecked = (name: string) => get(name) === 'true';
-  const hasCount = (name: string) => (counts?.[name] || 0) > 0;
+  // ---- Preferences (not verified) ----
+  const [prefs, setPrefs] = useState({
+    returnVisits: false,
+    priceTransparency: false,
+    freeQuote: false,
+    calloutFeeClarity: false,
+    eveningWeekend: false,
+    discreetService: false,
+    writtenReport: false,
+  });
 
-  const sourceOptions = useMemo(
-    () => [
-      { value: '', label: 'Any source' },
-      { value: 'BPCA', label: 'BPCA' },
-      { value: 'NPTA', label: 'NPTA' },
-      { value: 'COUNCIL', label: 'Council' },
-      { value: 'COMPANY_WEBSITE', label: 'Company website' },
-    ],
-    []
-  );
+  const togglePref = (key: keyof typeof prefs) =>
+    setPrefs((p) => ({ ...p, [key]: !p[key] }));
+
+  const selectedPrefQuestions = useMemo(() => {
+    const q: string[] = [];
+    if (prefs.returnVisits)
+      q.push(
+        'Do you offer return visits / follow-up re-treatments if activity continues? What are the terms?'
+      );
+    if (prefs.priceTransparency)
+      q.push(
+        'Can you explain pricing clearly upfront (typical ranges, what affects cost, and what’s included)?'
+      );
+    if (prefs.freeQuote)
+      q.push(
+        'Do you offer a free quote or inspection? If not, what is the charge?'
+      );
+    if (prefs.calloutFeeClarity)
+      q.push('Is there a call-out fee, and is it deducted if I proceed?');
+    if (prefs.eveningWeekend)
+      q.push('Do you offer evening or weekend appointments, and are there surcharges?');
+    if (prefs.discreetService)
+      q.push('Can you attend discreetly (unbranded vehicle / minimal signage) if needed?');
+    if (prefs.writtenReport)
+      q.push('Do you provide a written service report / treatment notes after the visit?');
+    return q;
+  }, [prefs]);
+
+  // Current values from URL
+  const q = searchParams.get('q') || '';
+  const pest = searchParams.get('pest') || '';
+  const type = searchParams.get('type') || '';
+  const emergency = asBool(searchParams.get('emergency'));
+
+  const has_phone = asBool(searchParams.get('has_phone'));
+  const has_website = asBool(searchParams.get('has_website'));
+  const has_email = asBool(searchParams.get('has_email'));
+  const has_any_contact = asBool(searchParams.get('has_any_contact'));
+
+  const has_postcode = asBool(searchParams.get('has_postcode'));
+  const has_address = asBool(searchParams.get('has_address'));
+
+  const both_services = asBool(searchParams.get('both_services'));
+  const specialist_pests = asBool(searchParams.get('specialist_pests'));
+
+  const anyActive =
+    Boolean(q || pest || type) ||
+    emergency ||
+    has_phone ||
+    has_website ||
+    has_email ||
+    has_any_contact ||
+    has_postcode ||
+    has_address ||
+    both_services ||
+    specialist_pests;
+
+  const isDisabled = (key: string) => {
+    const c = counts?.[key] ?? 0;
+    // If no providers have this signal, disable the checkbox (still shows label)
+    return c === 0;
+  };
 
   return (
-    <div className="bg-white p-4 rounded-lg border border-slate-200 mb-8 space-y-6">
-      {/* Top spine */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
-        <div className="md:col-span-2">
-          <label className="block text-sm font-medium text-slate-700 mb-1">Search provider</label>
+    <div className="bg-white p-4 rounded-lg border border-slate-200 mb-8">
+      {/* Helper copy */}
+      <p className="text-xs text-slate-500 mb-3">
+        Filters show factual attributes or detected signals based on published information. Results are not ranked by quality or recommendation.
+      </p>
+
+      {/* Top row: primary filters */}
+      <div className="space-y-4 md:space-y-0 md:flex md:gap-4 items-end">
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-slate-700 mb-1">
+            Search name
+          </label>
           <input
             type="text"
-            placeholder="Type a provider name..."
+            placeholder="Provider name..."
             className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
-            defaultValue={get('q')}
-            onChange={(e) => setParam('q', e.target.value)}
+            onChange={(e) => handleFilterChange('q', e.target.value)}
+            defaultValue={q}
           />
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Pest type</label>
+        <div className="w-full md:w-48">
+          <label className="block text-sm font-medium text-slate-700 mb-1">
+            Pest type
+          </label>
           <select
             className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
-            value={get('pest')}
-            onChange={(e) => setParam('pest', e.target.value)}
+            onChange={(e) => handleFilterChange('pest', e.target.value)}
+            defaultValue={pest}
           >
             <option value="">All pests</option>
             <option value="rats">Rats</option>
@@ -82,12 +161,14 @@ export default function FilterBar({ counts }: { counts: Counts }) {
           </select>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Service type</label>
+        <div className="w-full md:w-48">
+          <label className="block text-sm font-medium text-slate-700 mb-1">
+            Service scope (declared)
+          </label>
           <select
             className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
-            value={get('type')}
-            onChange={(e) => setParam('type', e.target.value)}
+            onChange={(e) => handleFilterChange('type', e.target.value)}
+            defaultValue={type}
           >
             <option value="">Any</option>
             <option value="residential">Residential</option>
@@ -95,139 +176,277 @@ export default function FilterBar({ counts }: { counts: Counts }) {
           </select>
         </div>
 
-        <div className="flex gap-3 items-center justify-between">
-          <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-700">
+        <div className="w-full md:w-auto pb-2 flex items-center justify-between md:block">
+          <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
               className="rounded border-slate-300"
-              checked={boolChecked('emergency')}
-              onChange={(e) => toggleBool('emergency', e.target.checked)}
+              onChange={(e) =>
+                handleFilterChange('emergency', e.target.checked ? 'true' : '')
+              }
+              defaultChecked={emergency}
             />
-            Emergency call-out
+            <span className="text-sm text-slate-700">
+              Emergency call-out (declared)
+            </span>
           </label>
 
-          <button
-            type="button"
-            onClick={clearAll}
-            className="px-3 py-2 border border-slate-300 rounded-md text-sm text-slate-700 hover:bg-slate-50"
-          >
-            Clear filters
-          </button>
+          {anyActive && (
+            <button
+              type="button"
+              onClick={clearAll}
+              className="ml-3 md:ml-0 md:mt-2 text-xs text-slate-600 hover:underline"
+            >
+              Clear filters
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Source */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Signals (data-backed) */}
+      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Group 1 */}
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Listing source</label>
-          <select
-            className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
-            value={get('source')}
-            onChange={(e) => setParam('source', e.target.value)}
-          >
-            {sourceOptions.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-          <p className="text-xs text-slate-500 mt-1">Shows where this listing appears online.</p>
+          <div className="text-sm font-semibold text-slate-900 mb-2">
+            Contact details available
+          </div>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+              <input
+                type="checkbox"
+                className="rounded border-slate-300"
+                checked={has_phone}
+                disabled={isDisabled('has_phone')}
+                onChange={(e) => handleToggle('has_phone', e.target.checked)}
+              />
+              Phone number listed
+            </label>
+
+            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+              <input
+                type="checkbox"
+                className="rounded border-slate-300"
+                checked={has_website}
+                disabled={isDisabled('has_website')}
+                onChange={(e) => handleToggle('has_website', e.target.checked)}
+              />
+              Website listed
+            </label>
+
+            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+              <input
+                type="checkbox"
+                className="rounded border-slate-300"
+                checked={has_email}
+                disabled={isDisabled('has_email')}
+                onChange={(e) => handleToggle('has_email', e.target.checked)}
+              />
+              Email address listed
+            </label>
+
+            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+              <input
+                type="checkbox"
+                className="rounded border-slate-300"
+                checked={has_any_contact}
+                disabled={isDisabled('has_any_contact')}
+                onChange={(e) => handleToggle('has_any_contact', e.target.checked)}
+              />
+              Any contact method listed
+            </label>
+          </div>
+
+          <p className="text-xs text-slate-500 mt-2">
+            Based on contact details published by the provider or source.
+          </p>
+        </div>
+
+        {/* Group 2 */}
+        <div>
+          <div className="text-sm font-semibold text-slate-900 mb-2">
+            Location information listed
+          </div>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+              <input
+                type="checkbox"
+                className="rounded border-slate-300"
+                checked={has_address}
+                disabled={isDisabled('has_address')}
+                onChange={(e) => handleToggle('has_address', e.target.checked)}
+              />
+              Address listed
+            </label>
+
+            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+              <input
+                type="checkbox"
+                className="rounded border-slate-300"
+                checked={has_postcode}
+                disabled={isDisabled('has_postcode')}
+                onChange={(e) => handleToggle('has_postcode', e.target.checked)}
+              />
+              Postcode listed
+            </label>
+          </div>
+
+          <p className="text-xs text-slate-500 mt-2">
+            Based on published address information. Coverage areas may extend beyond listed locations.
+          </p>
+        </div>
+
+        {/* Group 3 (extra signals) */}
+        <div className="md:col-span-2">
+          <div className="text-sm font-semibold text-slate-900 mb-2">
+            Service scope (declared)
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+              <input
+                type="checkbox"
+                className="rounded border-slate-300"
+                checked={both_services}
+                disabled={isDisabled('both_services')}
+                onChange={(e) => handleToggle('both_services', e.target.checked)}
+              />
+              Residential & commercial listed
+            </label>
+
+            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+              <input
+                type="checkbox"
+                className="rounded border-slate-300"
+                checked={specialist_pests}
+                disabled={isDisabled('specialist_pests')}
+                onChange={(e) => handleToggle('specialist_pests', e.target.checked)}
+              />
+              Wider pest coverage (declared)
+            </label>
+          </div>
+
+          <p className="text-xs text-slate-500 mt-2">
+            Based on services or pest types listed by the provider or source. This does not indicate expertise or specialisation.
+          </p>
         </div>
       </div>
 
-      {/* Expanded filters (Groups 1–7) */}
-      <div className="space-y-4">
-        <Section title="Contact availability" subtitle="Filters based on what contact details are provided.">
-          <Check name="has_phone" label={`Phone listed (${counts.has_phone || 0})`} disabled={!hasCount('has_phone')} checked={boolChecked('has_phone')} onToggle={toggleBool} />
-          <Check name="has_website" label={`Website listed (${counts.has_website || 0})`} disabled={!hasCount('has_website')} checked={boolChecked('has_website')} onToggle={toggleBool} />
-          <Check name="has_email" label={`Email listed (${counts.has_email || 0})`} disabled={!hasCount('has_email')} checked={boolChecked('has_email')} onToggle={toggleBool} />
-          <Check name="has_any_contact" label={`Any contact method (${counts.has_any_contact || 0})`} disabled={!hasCount('has_any_contact')} checked={boolChecked('has_any_contact')} onToggle={toggleBool} />
-        </Section>
+      {/* Preferences (not verified) */}
+      <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4">
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold text-slate-900">
+            Preferences (not verified)
+          </h3>
+          <p className="text-xs text-slate-500 mt-1">
+            These preferences aren’t verified in listings. Use them as a checklist when contacting providers.
+          </p>
+        </div>
 
-        <Section title="Location details" subtitle="Shows whether location details are provided (not service coverage).">
-          <Check name="has_postcode" label={`Postcode listed (${counts.has_postcode || 0})`} disabled={!hasCount('has_postcode')} checked={boolChecked('has_postcode')} onToggle={toggleBool} />
-          <Check name="has_address" label={`Address listed (${counts.has_address || 0})`} disabled={!hasCount('has_address')} checked={boolChecked('has_address')} onToggle={toggleBool} />
-        </Section>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-1 rounded border-slate-300"
+              checked={prefs.returnVisits}
+              onChange={() => togglePref('returnVisits')}
+            />
+            <span className="text-sm text-slate-700">
+              Prefer providers that offer return visits / follow-up
+            </span>
+          </label>
 
-        <Section title="Services offered (listed)" subtitle="Based on services explicitly listed.">
-          <Check name="both_services" label={`Residential + commercial (${counts.both_services || 0})`} disabled={!hasCount('both_services')} checked={boolChecked('both_services')} onToggle={toggleBool} />
-          <Check name="specialist_pests" label={`Specialist pests handled (${counts.specialist_pests || 0})`} disabled={!hasCount('specialist_pests')} checked={boolChecked('specialist_pests')} onToggle={toggleBool} />
-        </Section>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-1 rounded border-slate-300"
+              checked={prefs.priceTransparency}
+              onChange={() => togglePref('priceTransparency')}
+            />
+            <span className="text-sm text-slate-700">
+              Prefer clear pricing upfront (price transparency)
+            </span>
+          </label>
 
-        <Section title="Treatment approach" subtitle="Based on text where available.">
-          <Check
-            name="mentions_follow_up"
-            label={`Mentions return visits (${counts.mentions_follow_up || 0})`}
-            disabled={!hasCount('mentions_follow_up')}
-            checked={boolChecked('mentions_follow_up')}
-            onToggle={toggleBool}
-          />
-        </Section>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-1 rounded border-slate-300"
+              checked={prefs.freeQuote}
+              onChange={() => togglePref('freeQuote')}
+            />
+            <span className="text-sm text-slate-700">
+              Prefer free quote / inspection (where available)
+            </span>
+          </label>
 
-        <Section title="Pricing information" subtitle="Based on pricing information mentioned by the business (where available).">
-          <Check name="mentions_pricing" label={`Mentions pricing info (${counts.mentions_pricing || 0})`} disabled={!hasCount('mentions_pricing')} checked={boolChecked('mentions_pricing')} onToggle={toggleBool} />
-          <Check name="mentions_callout_fee" label={`Mentions call-out fee (${counts.mentions_callout_fee || 0})`} disabled={!hasCount('mentions_callout_fee')} checked={boolChecked('mentions_callout_fee')} onToggle={toggleBool} />
-          <Check name="mentions_free_quote" label={`Mentions free quote/inspection (${counts.mentions_free_quote || 0})`} disabled={!hasCount('mentions_free_quote')} checked={boolChecked('mentions_free_quote')} onToggle={toggleBool} />
-        </Section>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-1 rounded border-slate-300"
+              checked={prefs.calloutFeeClarity}
+              onChange={() => togglePref('calloutFeeClarity')}
+            />
+            <span className="text-sm text-slate-700">Prefer call-out fee clarity</span>
+          </label>
 
-        <Section title="Business details" subtitle="Based on the level of detail provided.">
-          <Check name="multiple_contact_methods" label={`Multiple contact methods (${counts.multiple_contact_methods || 0})`} disabled={!hasCount('multiple_contact_methods')} checked={boolChecked('multiple_contact_methods')} onToggle={toggleBool} />
-          <Check name="phone_and_website" label={`Phone + website (${counts.phone_and_website || 0})`} disabled={!hasCount('phone_and_website')} checked={boolChecked('phone_and_website')} onToggle={toggleBool} />
-          <Check name="email_domain_present" label={`Email domain present (${counts.email_domain_present || 0})`} disabled={!hasCount('email_domain_present')} checked={boolChecked('email_domain_present')} onToggle={toggleBool} />
-        </Section>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-1 rounded border-slate-300"
+              checked={prefs.eveningWeekend}
+              onChange={() => togglePref('eveningWeekend')}
+            />
+            <span className="text-sm text-slate-700">Prefer evening / weekend availability</span>
+          </label>
 
-        <Section title="Listings & associations" subtitle="Based on where the business appears online (source-based, no scoring).">
-          <Check name="association_listed" label={`Association-listed (${counts.association_listed || 0})`} disabled={!hasCount('association_listed')} checked={boolChecked('association_listed')} onToggle={toggleBool} />
-          <Check name="multi_source" label={`Listed in multiple sources (${counts.multi_source || 0})`} disabled={!hasCount('multi_source')} checked={boolChecked('multi_source')} onToggle={toggleBool} />
-        </Section>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-1 rounded border-slate-300"
+              checked={prefs.discreetService}
+              onChange={() => togglePref('discreetService')}
+            />
+            <span className="text-sm text-slate-700">
+              Prefer discreet attendance (if needed)
+            </span>
+          </label>
+
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-1 rounded border-slate-300"
+              checked={prefs.writtenReport}
+              onChange={() => togglePref('writtenReport')}
+            />
+            <span className="text-sm text-slate-700">
+              Prefer written service report after treatment
+            </span>
+          </label>
+        </div>
+
+        {/* Call script */}
+        <div className="mt-4 rounded-md bg-slate-50 border border-slate-200 p-3">
+          <div className="text-xs font-semibold text-slate-800 mb-1">
+            Quick call script
+          </div>
+
+          {selectedPrefQuestions.length === 0 ? (
+            <p className="text-xs text-slate-600">
+              Select preferences above to generate a checklist of questions to ask during your first call.
+            </p>
+          ) : (
+            <ol className="list-decimal ml-4 space-y-1 text-xs text-slate-700">
+              {selectedPrefQuestions.map((qq, idx) => (
+                <li key={idx}>{qq}</li>
+              ))}
+            </ol>
+          )}
+
+          <p className="text-[11px] text-slate-500 mt-2">
+            Tip: write down answers from 2–3 providers before choosing.
+          </p>
+        </div>
       </div>
     </div>
-  );
-}
-
-function Section({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="border border-slate-200 rounded-lg p-4">
-      <div className="mb-3">
-        <div className="font-semibold text-slate-900">{title}</div>
-        {subtitle ? <div className="text-sm text-slate-500">{subtitle}</div> : null}
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">{children}</div>
-    </div>
-  );
-}
-
-function Check({
-  name,
-  label,
-  checked,
-  disabled,
-  onToggle,
-}: {
-  name: string;
-  label: string;
-  checked: boolean;
-  disabled: boolean;
-  onToggle: (name: string, on: boolean) => void;
-}) {
-  return (
-    <label className={`flex items-center gap-2 text-sm ${disabled ? 'text-slate-400' : 'text-slate-700'} cursor-pointer`}>
-      <input
-        type="checkbox"
-        className="rounded border-slate-300"
-        checked={checked}
-        disabled={disabled}
-        onChange={(e) => onToggle(name, e.target.checked)}
-      />
-      <span>{label}</span>
-    </label>
   );
 }
