@@ -19,39 +19,83 @@ export interface Provider {
 
 const dataDirectory = path.join(process.cwd(), 'data');
 
-export function getAllProviders(): Provider[] {
-  const filePath = path.join(dataDirectory, 'providers_london_v1.json');
-  const fileContents = fs.readFileSync(filePath, 'utf8');
-  const providers: Provider[] = JSON.parse(fileContents);
-  return providers.filter(p => p.serves_london);
+function readJsonFile<T>(filePath: string, fallback: T): T {
+  try {
+    const fileContents = fs.readFileSync(filePath, 'utf8');
+    return JSON.parse(fileContents) as T;
+  } catch {
+    return fallback;
+  }
 }
 
-export function getFeaturedProviders(): Provider[] {
+// Normalise pest strings so filters match reliably (no inference; just consistent formatting)
+function normalizePest(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/_/g, ' ')
+    .replace(/-/g, ' ')
+    .replace(/\s+/g, ' ');
+}
+
+export function getAllProviders(): Provider[] {
+  const filePath = path.join(dataDirectory, 'providers_london_v1.json');
+  const providers = readJsonFile<Provider[]>(filePath, []);
+  return providers.filter((p) => p.serves_london);
+}
+
+/**
+ * Featured providers for the London overview page.
+ *
+ * Rules (deterministic, no inference):
+ * - Primary source of "featured" is data/featured_provider_ids.json.
+ * - Returned order respects the order of IDs in that JSON.
+ * - We cap at `limit` (default 8).
+ * - If fewer than `limit` IDs are present/match, we fill remaining slots with a stable preview set:
+ *   remaining providers sorted by canonical_id (ascending), excluding already-selected.
+ */
+export function getFeaturedProviders(limit: number = 8): Provider[] {
   const allProviders = getAllProviders();
   const featuredPath = path.join(dataDirectory, 'featured_provider_ids.json');
-  
-  let featuredIds: string[] = [];
-  try {
-    const fileContents = fs.readFileSync(featuredPath, 'utf8');
-    featuredIds = JSON.parse(fileContents);
-  } catch (e) {
-    // Fallback if file doesn't exist
-    return allProviders.slice(0, 6);
+
+  const featuredIds = readJsonFile<string[]>(featuredPath, []).filter(Boolean);
+
+  // Build a map for fast lookup
+  const byId = new Map(allProviders.map((p) => [p.canonical_id, p] as const));
+
+  // 1) Explicit featured, in ID-list order
+  const explicitFeatured: Provider[] = [];
+  for (const id of featuredIds) {
+    const p = byId.get(id);
+    if (p) explicitFeatured.push(p);
+    if (explicitFeatured.length >= limit) break;
   }
 
-  return allProviders.filter(p => featuredIds.includes(p.canonical_id));
+  if (explicitFeatured.length >= limit) return explicitFeatured.slice(0, limit);
+
+  // 2) Deterministic fill (preview set), excluding explicit featured
+  const selected = new Set(explicitFeatured.map((p) => p.canonical_id));
+  const fillers = allProviders
+    .filter((p) => !selected.has(p.canonical_id))
+    .slice() // defensive copy
+    .sort((a, b) => a.canonical_id.localeCompare(b.canonical_id));
+
+  const needed = limit - explicitFeatured.length;
+  return explicitFeatured.concat(fillers.slice(0, needed));
 }
 
 export function getProviderBySlug(slug: string): Provider | undefined {
   const allProviders = getAllProviders();
-  return allProviders.find(p => p.slug === slug);
+  return allProviders.find((p) => p.slug === slug);
 }
 
 export function getProvidersByPest(pestSlug: string): Provider[] {
   const allProviders = getAllProviders();
-  // Simple slug matching: "bed-bugs" -> "bed bugs"
-  const pestName = pestSlug.replace(/-/g, ' ');
-  return allProviders.filter(p => 
-    p.pests_supported && p.pests_supported.includes(pestName)
-  );
+  // e.g. "bed-bugs" -> "bed bugs"
+  const pestName = normalizePest(pestSlug);
+
+  return allProviders.filter((p) => {
+    const pests = Array.isArray(p.pests_supported) ? p.pests_supported : [];
+    return pests.map(normalizePest).includes(pestName);
+  });
 }
