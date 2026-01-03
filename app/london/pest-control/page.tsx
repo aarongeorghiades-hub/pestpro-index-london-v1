@@ -1,4 +1,4 @@
-import { getAllProviders, normalizePest, type Provider } from '@/lib/data';
+import { getDirectoryProviders } from '@/lib/data';
 import ProviderList from '@/components/ProviderList';
 import FilterBar from '@/components/FilterBar';
 import Link from 'next/link';
