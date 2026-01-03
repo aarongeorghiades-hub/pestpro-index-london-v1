@@ -1,4 +1,4 @@
-import { getDirectoryProviders } from '@/lib/data';
+import { getDirectoryProviders, normalizePest, type Provider } from '@/lib/data';
 import ProviderList from '@/components/ProviderList';
 import FilterBar from '@/components/FilterBar';
 import Link from 'next/link';
@@ -6,7 +6,7 @@ import type { Metadata } from 'next';
 
 export const dynamic = 'force-dynamic';
 
-type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>;
+type SearchParams = { [key: string]: string | string[] | undefined };
 
 function asBool(v: unknown): boolean {
   return v === 'true';
@@ -167,7 +167,7 @@ export async function generateMetadata({
 }: {
   searchParams: SearchParams;
 }): Promise<Metadata> {
-  const params = await searchParams;
+const params = searchParams;
 
   // Any active filter => noindex (canonical remains /london/pest-control)
   const hasAny =
@@ -201,7 +201,7 @@ export async function generateMetadata({
 }
 
 export default async function PestControlPage({ searchParams }: { searchParams: SearchParams }) {
-  const params = await searchParams;
+  const params = searchParams;
 
   const allProviders = getDirectoryProviders();
 
