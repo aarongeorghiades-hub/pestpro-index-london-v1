@@ -203,7 +203,7 @@ export async function generateMetadata({
 export default async function PestControlPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
 
-  const allProviders = getAllProviders();
+  const allProviders = getDirectoryProviders();
 
   // Counts to drive UI (disable filters that would return 0)
   const signalCounts = countSignals(allProviders);
