@@ -56,7 +56,30 @@ export function getAllProviders(): Provider[] {
 }
 
 /**
+ * Provider-level entries (~484). Used for /london/pest-control directory + filters.
+ * No inference: only null-coercion and type safety.
+ */
+export function getDirectoryProviders(): Provider[] {
+  const providers = readJson<Provider[]>('providers_london_v1.json');
+  return providers
+    .filter((p) => p.serves_london)
+    .map((p) => ({
+      ...p,
+      pests_supported: Array.isArray(p.pests_supported) ? p.pests_supported : null,
+      residential: p.residential ?? null,
+      commercial: p.commercial ?? null,
+      emergency_callout: p.emergency_callout ?? null,
+      phone: p.phone ?? null,
+      website: p.website ?? null,
+      email: p.email ?? null,
+      address: p.address ?? null,
+      postcode: p.postcode ?? null,
+    }));
+}
+
+/**
  * Listing-level entries (~1,200). This is Option B for the /london/pest-control directory.
+ * (We are NOT using this for Option 1 directory, but keeping it for reference / debugging.)
  */
 export function getAllListings(): Listing[] {
   const listings = readJson<Listing[]>('listings_london_v1.json');
