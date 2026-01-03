@@ -1,127 +1,44 @@
-import fs from 'fs';
-import path from 'path';
+import Link from 'next/link';
+import { getFeaturedProviders } from '@/lib/data';
+import ProviderList from '@/components/ProviderList';
 
-export interface Provider {
-  canonical_id: string;
-  name: string;
-  slug: string;
-  phone: string | null;
-  website: string | null;
-  email: string | null;
-  address: string | null;
-  postcode: string | null;
-  serves_london: boolean;
-  residential: boolean | null;
-  commercial: boolean | null;
-  emergency_callout: boolean | null;
-  pests_supported: string[] | null;
+export default function LondonPage() {
+  const featured = getFeaturedProviders();
 
-  // Optional enrichment fields (may be null/absent)
-  profile_text?: string | null;
-  sources?: string[] | null;
-}
+  return (
+    <main className="min-h-screen bg-slate-50 py-12 px-4">
+      <div className="container mx-auto max-w-6xl">
+        <h1 className="text-3xl font-bold text-slate-900">Pest control in London</h1>
+        <p className="text-slate-600 mt-2">
+          Browse providers serving Greater London. Start with the directory or explore by pest type.
+        </p>
 
-export interface Listing extends Provider {
-  listing_id: string;
-  source: string | null;
+        <div className="mt-6 flex gap-3">
+          <Link
+            href="/london/pest-control"
+            className="inline-flex items-center justify-center rounded-lg bg-slate-900 text-white px-4 py-2 text-sm"
+          >
+            View all providers
+          </Link>
+        </div>
 
-  // Listing-level extra fields (may be null)
-  company_name?: string | null;
-  canonical_name?: string | null;
-  borough?: string | null;
-  rating?: number | null;
-  review_count?: number | null;
-  search_area?: string | null;
-  profile_url?: string | null;
-}
+        <div className="mt-10">
+          <h2 className="text-xl font-semibold text-slate-900">Featured providers</h2>
+          <p className="text-slate-600 mt-1">
+            A small preview of providers in the London directory.
+          </p>
 
-const dataDirectory = path.join(process.cwd(), 'data');
+          <div className="mt-4">
+            <ProviderList providers={featured} />
+          </div>
 
-export function normalizePest(s: string): string {
-  return (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
-}
-
-function readJson<T>(fileName: string): T {
-  const filePath = path.join(dataDirectory, fileName);
-  const fileContents = fs.readFileSync(filePath, 'utf8');
-  return JSON.parse(fileContents) as T;
-}
-
-/**
- * Canonical provider list (deduped). Used for featured providers and provider pages.
- */
-export function getAllProviders(): Provider[] {
-  const providers = readJson<Provider[]>('providers_london_v1.json');
-  return providers.filter((p) => p.serves_london);
-}
-
-/**
- * Listing-level entries (~1,200). This is Option B for the /london/pest-control directory.
- */
-export function getAllListings(): Listing[] {
-  const listings = readJson<Listing[]>('listings_london_v1.json');
-
-  // Ensure consistent types & basic safety (no inference; just coercion)
-  return listings
-    .filter((l) => l.serves_london !== false) // default true if absent
-    .map((l) => ({
-      ...l,
-      name: (l.name || l.canonical_name || l.company_name || 'Unknown').trim(),
-      source: l.source ? String(l.source).trim() : null,
-      pests_supported: Array.isArray(l.pests_supported) ? l.pests_supported : null,
-      residential: l.residential ?? null,
-      commercial: l.commercial ?? null,
-      emergency_callout: l.emergency_callout ?? null,
-      phone: l.phone ?? null,
-      website: l.website ?? null,
-      email: l.email ?? null,
-      address: l.address ?? null,
-      postcode: l.postcode ?? null,
-      rating: typeof l.rating === 'number' ? l.rating : l.rating == null ? null : Number(l.rating),
-      review_count:
-        typeof l.review_count === 'number'
-          ? l.review_count
-          : l.review_count == null
-          ? null
-          : Number(l.review_count),
-    }));
-}
-
-export function getFeaturedProviders(): Provider[] {
-  const allProviders = getAllProviders();
-  const featuredPath = path.join(dataDirectory, 'featured_provider_ids.json');
-
-  let featuredIds: string[] = [];
-  try {
-    const fileContents = fs.readFileSync(featuredPath, 'utf8');
-    featuredIds = JSON.parse(fileContents);
-  } catch (e) {
-    // Fallback if file doesn't exist
-    return allProviders.slice(0, 8);
-  }
-
-  // Keep order deterministic by featured_ids.json order
-  const byId = new Map(allProviders.map((p) => [p.canonical_id, p]));
-  const featured: Provider[] = [];
-  for (const id of featuredIds) {
-    const p = byId.get(id);
-    if (p) featured.push(p);
-    if (featured.length >= 8) break;
-  }
-  return featured;
-}
-
-export function getProviderBySlug(slug: string): Provider | undefined {
-  const allProviders = getAllProviders();
-  return allProviders.find((p) => p.slug === slug);
-}
-
-export function getProvidersByPest(pestSlug: string): Provider[] {
-  const allProviders = getAllProviders();
-  const pestName = pestSlug.replace(/-/g, ' ');
-  const target = normalizePest(pestName);
-  return allProviders.filter((p) => {
-    const pests = Array.isArray(p.pests_supported) ? p.pests_supported : [];
-    return pests.map(normalizePest).includes(target);
-  });
+          <div className="mt-6">
+            <Link href="/london/pest-control" className="text-blue-600 hover:underline">
+              See the full London provider list →
+            </Link>
+          </div>
+        </div>
+      </div>
+    </main>
+  );
 }
