@@ -1,452 +1,231 @@
-'use client';
+// scripts/buildProvidersFromListings.mjs
+// Build canonical providers from raw multi-source listings (NO INFERENCE).
+// Usage:
+//   node scripts/buildProvidersFromListings.mjs
+//
+// Expects:
+//   data/listings_london_v1.json
+// Writes:
+//   data/providers_london_v1.json
+//   data/providers_london_v1.build_report.json
 
-import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useMemo, useState } from 'react';
+import fs from "node:fs";
+import path from "node:path";
 
-type Counts = Record<string, number>;
+const ROOT = process.cwd();
+const IN_PATH = path.join(ROOT, "data", "listings_london_v1.json");
+const OUT_PATH = path.join(ROOT, "data", "providers_london_v1.json");
+const REPORT_PATH = path.join(ROOT, "data", "providers_london_v1.build_report.json");
 
-type Props = {
-  counts?: Counts;
-};
-
-function asBool(v: string | null): boolean {
-  return v === 'true';
+function readJson(p) {
+  return JSON.parse(fs.readFileSync(p, "utf8"));
 }
 
-export default function FilterBar({ counts = {} }: Props) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+function writeJson(p, obj) {
+  fs.writeFileSync(p, JSON.stringify(obj, null, 2) + "\n", "utf8");
+}
 
-  const createQueryString = useCallback(
-    (name: string, value: string) => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (value) {
-        params.set(name, value);
-      } else {
-        params.delete(name);
-      }
-      return params.toString();
+function normStr(v) {
+  if (v === undefined || v === null) return "";
+  const s = String(v).trim();
+  return s;
+}
+
+function normLower(v) {
+  return normStr(v).toLowerCase();
+}
+
+function uniq(arr) {
+  return Array.from(new Set(arr.filter(Boolean)));
+}
+
+function pickFirstNonEmpty(existing, candidate) {
+  const a = normStr(existing);
+  const b = normStr(candidate);
+  if (a) return a;
+  if (b) return b;
+  return "";
+}
+
+function mergeTriState(existing, candidate) {
+  // candidate must be explicitly true/false to be used. Otherwise ignore.
+  if (candidate === true) return true;
+  if (candidate === false) return false;
+  return existing ?? null;
+}
+
+function mergeFieldWithConflict(provider, field, candidateRaw, conflicts) {
+  const candidate = normStr(candidateRaw);
+  if (!candidate) return;
+
+  const current = normStr(provider[field]);
+  if (!current) {
+    provider[field] = candidate;
+    return;
+  }
+  if (current !== candidate) {
+    conflicts[field] = conflicts[field] || uniq([current]);
+    conflicts[field] = uniq([...conflicts[field], candidate]);
+  }
+}
+
+function main() {
+  if (!fs.existsSync(IN_PATH)) {
+    console.error(`Missing input file: ${IN_PATH}`);
+    process.exit(1);
+  }
+
+  const listings = readJson(IN_PATH);
+  if (!Array.isArray(listings)) {
+    console.error("Input must be an array of listings.");
+    process.exit(1);
+  }
+
+  const byId = new Map();
+
+  const report = {
+    input_listings: listings.length,
+    providers_built: 0,
+    missing_canonical_id: 0,
+    conflicts: {
+      phone: 0,
+      website: 0,
+      email: 0,
+      name: 0,
     },
-    [searchParams]
-  );
-
-  const handleFilterChange = (name: string, value: string) => {
-    const qs = createQueryString(name, value);
-    router.push(qs ? `?${qs}` : '?', { scroll: false });
+    providers_with_any_conflict: 0,
   };
 
-  const handleToggle = (name: string, checked: boolean) => {
-    handleFilterChange(name, checked ? 'true' : '');
-  };
+  for (const row of listings) {
+    const canonical_id = normStr(row?.canonical_id);
+    if (!canonical_id) {
+      report.missing_canonical_id += 1;
+      continue;
+    }
 
-  const clearAll = () => {
-    router.push('?', { scroll: false });
-  };
+    const key = canonical_id; // keep as string, immutable
 
-  // ---- Preferences (not verified) ----
-  const [prefs, setPrefs] = useState({
-    returnVisits: false,
-    priceTransparency: false,
-    freeQuote: false,
-    calloutFeeClarity: false,
-    eveningWeekend: false,
-    discreetService: false,
-    writtenReport: false,
-  });
+    if (!byId.has(key)) {
+      byId.set(key, {
+        canonical_id: key,
+        name: "",            // best available display name (non-inferred)
+        slug: "",            // optional: only if provided in listings
+        phone: "",
+        website: "",
+        email: "",
+        address: "",         // optional: only if provided
+        postcode: "",        // optional: only if provided
+        borough: "",         // optional: only if provided
+        serves_london: null, // tri-state
+        residential: null,   // tri-state
+        commercial: null,    // tri-state
+        emergency_callout: null, // tri-state
+        pests_supported: [],
+        sources: [],
+        profile_text: "",
+        // build metadata (non-user-facing)
+        _build: {
+          listings_count: 0,
+          conflicts: {}, // field -> [values...]
+        },
+      });
+    }
 
-  const togglePref = (key: keyof typeof prefs) =>
-    setPrefs((p) => ({ ...p, [key]: !p[key] }));
+    const p = byId.get(key);
+    p._build.listings_count += 1;
 
-  const selectedPrefQuestions = useMemo(() => {
-    const q: string[] = [];
-    if (prefs.returnVisits)
-      q.push(
-        'Do you offer return visits / follow-up re-treatments if activity continues? What are the terms?'
+    // Sources
+    const src = normStr(row?.source);
+    if (src) p.sources.push(src);
+
+    // Name: pick first non-empty; track conflict if differing
+    const candName = normStr(row?.name || row?.provider_name || row?.business_name);
+    if (candName) {
+      const current = normStr(p.name);
+      if (!current) p.name = candName;
+      else if (current !== candName) {
+        p._build.conflicts.name = uniq([...(p._build.conflicts.name || [current]), candName]);
+      }
+    }
+
+    // Optional slug if present
+    const candSlug = normStr(row?.slug);
+    if (!p.slug && candSlug) p.slug = candSlug;
+
+    // Contact fields with conflict capture
+    mergeFieldWithConflict(p, "phone", row?.phone, p._build.conflicts);
+    mergeFieldWithConflict(p, "website", row?.website, p._build.conflicts);
+    mergeFieldWithConflict(p, "email", row?.email, p._build.conflicts);
+
+    // Optional location fields (only if present)
+    p.address = pickFirstNonEmpty(p.address, row?.address);
+    p.postcode = pickFirstNonEmpty(p.postcode, row?.postcode);
+    p.borough = pickFirstNonEmpty(p.borough, row?.borough);
+
+    // Tri-state booleans: only take explicit true/false from listing rows
+    p.serves_london = mergeTriState(p.serves_london, row?.serves_london);
+    p.residential = mergeTriState(p.residential, row?.residential);
+    p.commercial = mergeTriState(p.commercial, row?.commercial);
+    p.emergency_callout = mergeTriState(p.emergency_callout, row?.emergency_callout);
+
+    // Pests: union; accept either array or comma-separated string
+    const pests = row?.pests_supported;
+    if (Array.isArray(pests)) {
+      p.pests_supported.push(...pests.map(normStr).filter(Boolean));
+    } else if (typeof pests === "string") {
+      p.pests_supported.push(
+        ...pests.split(",").map(s => s.trim()).filter(Boolean)
       );
-    if (prefs.priceTransparency)
-      q.push(
-        'Can you explain pricing clearly upfront (typical ranges, what affects cost, and what’s included)?'
-      );
-    if (prefs.freeQuote)
-      q.push(
-        'Do you offer a free quote or inspection? If not, what is the charge?'
-      );
-    if (prefs.calloutFeeClarity)
-      q.push('Is there a call-out fee, and is it deducted if I proceed?');
-    if (prefs.eveningWeekend)
-      q.push('Do you offer evening or weekend appointments, and are there surcharges?');
-    if (prefs.discreetService)
-      q.push('Can you attend discreetly (unbranded vehicle / minimal signage) if needed?');
-    if (prefs.writtenReport)
-      q.push('Do you provide a written service report / treatment notes after the visit?');
-    return q;
-  }, [prefs]);
+    }
 
-  // Current values from URL
-  const q = searchParams.get('q') || '';
-  const pest = searchParams.get('pest') || '';
-  const type = searchParams.get('type') || '';
-  const emergency = asBool(searchParams.get('emergency'));
+    // Profile text: keep the longest non-empty text we’ve seen (no inference)
+    const txt = normStr(row?.profile_text || row?.description || row?.about);
+    if (txt && txt.length > (p.profile_text?.length || 0)) {
+      p.profile_text = txt;
+    }
+  }
 
-  const has_phone = asBool(searchParams.get('has_phone'));
-  const has_website = asBool(searchParams.get('has_website'));
-  const has_email = asBool(searchParams.get('has_email'));
-  const has_any_contact = asBool(searchParams.get('has_any_contact'));
+  // Finalize providers array
+  const providers = [];
+  for (const p of byId.values()) {
+    p.sources = uniq(p.sources);
+    p.pests_supported = uniq(p.pests_supported);
 
-  const has_postcode = asBool(searchParams.get('has_postcode'));
-  const has_address = asBool(searchParams.get('has_address'));
+    // Normalize empties to nulls for clean downstream logic
+    const toNull = (v) => (normStr(v) ? v : null);
+    p.name = toNull(p.name);
+    p.slug = toNull(p.slug);
+    p.phone = toNull(p.phone);
+    p.website = toNull(p.website);
+    p.email = toNull(p.email);
+    p.address = toNull(p.address);
+    p.postcode = toNull(p.postcode);
+    p.borough = toNull(p.borough);
+    p.profile_text = toNull(p.profile_text);
 
-  const both_services = asBool(searchParams.get('both_services'));
-  const specialist_pests = asBool(searchParams.get('specialist_pests'));
+    // Count conflicts
+    const c = p._build.conflicts || {};
+    const hasAnyConflict = Object.keys(c).length > 0;
+    if (hasAnyConflict) report.providers_with_any_conflict += 1;
+    if (c.phone) report.conflicts.phone += 1;
+    if (c.website) report.conflicts.website += 1;
+    if (c.email) report.conflicts.email += 1;
+    if (c.name) report.conflicts.name += 1;
 
-  const anyActive =
-    Boolean(q || pest || type) ||
-    emergency ||
-    has_phone ||
-    has_website ||
-    has_email ||
-    has_any_contact ||
-    has_postcode ||
-    has_address ||
-    both_services ||
-    specialist_pests;
+    providers.push(p);
+  }
 
-  const isDisabled = (key: string) => {
-    const c = counts?.[key] ?? 0;
-    // If no providers have this signal, disable the checkbox (still shows label)
-    return c === 0;
-  };
+  // Deterministic order (string compare to avoid numeric coercion surprises)
+  providers.sort((a, b) => String(a.canonical_id).localeCompare(String(b.canonical_id)));
 
-  return (
-    <div className="bg-white p-4 rounded-lg border border-slate-200 mb-8">
-      {/* Helper copy */}
-      <p className="text-xs text-slate-500 mb-3">
-        Filters show factual attributes or detected signals based on published information. Results are not ranked by quality or recommendation.
-      </p>
+  report.providers_built = providers.length;
 
-      {/* Top row: primary filters */}
-      <div className="space-y-4 md:space-y-0 md:flex md:gap-4 items-end">
-        <div className="flex-1">
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Search name
-          </label>
-          <input
-            type="text"
-            placeholder="Provider name..."
-            className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
-            onChange={(e) => handleFilterChange('q', e.target.value)}
-            defaultValue={q}
-          />
-        </div>
+  writeJson(OUT_PATH, providers);
+  writeJson(REPORT_PATH, report);
 
-        <div className="w-full md:w-48">
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Pest type
-          </label>
-          <select
-            className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
-            onChange={(e) => handleFilterChange('pest', e.target.value)}
-            defaultValue={pest}
-          >
-            <option value="">All pests</option>
-            <option value="rats">Rats</option>
-            <option value="mice">Mice</option>
-            <option value="bed bugs">Bed bugs</option>
-            <option value="wasps">Wasps</option>
-            <option value="ants">Ants</option>
-            <option value="cockroaches">Cockroaches</option>
-            <option value="fleas">Fleas</option>
-            <option value="moths">Moths</option>
-            <option value="squirrels">Squirrels</option>
-          </select>
-        </div>
-
-        <div className="w-full md:w-48">
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Service scope (declared)
-          </label>
-          <select
-            className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
-            onChange={(e) => handleFilterChange('type', e.target.value)}
-            defaultValue={type}
-          >
-            <option value="">Any</option>
-            <option value="residential">Residential</option>
-            <option value="commercial">Commercial</option>
-          </select>
-        </div>
-
-        <div className="w-full md:w-auto pb-2 flex items-center justify-between md:block">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              className="rounded border-slate-300"
-              onChange={(e) =>
-                handleFilterChange('emergency', e.target.checked ? 'true' : '')
-              }
-              defaultChecked={emergency}
-            />
-            <span className="text-sm text-slate-700">
-              Emergency call-out (declared)
-            </span>
-          </label>
-
-          {anyActive && (
-            <button
-              type="button"
-              onClick={clearAll}
-              className="ml-3 md:ml-0 md:mt-2 text-xs text-slate-600 hover:underline"
-            >
-              Clear filters
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Signals (data-backed) */}
-      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Group 1 */}
-        <div>
-          <div className="text-sm font-semibold text-slate-900 mb-2">
-            Contact details available
-          </div>
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-              <input
-                type="checkbox"
-                className="rounded border-slate-300"
-                checked={has_phone}
-                disabled={isDisabled('has_phone')}
-                onChange={(e) => handleToggle('has_phone', e.target.checked)}
-              />
-              Phone number listed
-            </label>
-
-            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-              <input
-                type="checkbox"
-                className="rounded border-slate-300"
-                checked={has_website}
-                disabled={isDisabled('has_website')}
-                onChange={(e) => handleToggle('has_website', e.target.checked)}
-              />
-              Website listed
-            </label>
-
-            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-              <input
-                type="checkbox"
-                className="rounded border-slate-300"
-                checked={has_email}
-                disabled={isDisabled('has_email')}
-                onChange={(e) => handleToggle('has_email', e.target.checked)}
-              />
-              Email address listed
-            </label>
-
-            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-              <input
-                type="checkbox"
-                className="rounded border-slate-300"
-                checked={has_any_contact}
-                disabled={isDisabled('has_any_contact')}
-                onChange={(e) => handleToggle('has_any_contact', e.target.checked)}
-              />
-              Any contact method listed
-            </label>
-          </div>
-
-          <p className="text-xs text-slate-500 mt-2">
-            Based on contact details published by the provider or source.
-          </p>
-        </div>
-
-        {/* Group 2 */}
-        <div>
-          <div className="text-sm font-semibold text-slate-900 mb-2">
-            Location information listed
-          </div>
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-              <input
-                type="checkbox"
-                className="rounded border-slate-300"
-                checked={has_address}
-                disabled={isDisabled('has_address')}
-                onChange={(e) => handleToggle('has_address', e.target.checked)}
-              />
-              Address listed
-            </label>
-
-            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-              <input
-                type="checkbox"
-                className="rounded border-slate-300"
-                checked={has_postcode}
-                disabled={isDisabled('has_postcode')}
-                onChange={(e) => handleToggle('has_postcode', e.target.checked)}
-              />
-              Postcode listed
-            </label>
-          </div>
-
-          <p className="text-xs text-slate-500 mt-2">
-            Based on published address information. Coverage areas may extend beyond listed locations.
-          </p>
-        </div>
-
-        {/* Group 3 (extra signals) */}
-        <div className="md:col-span-2">
-          <div className="text-sm font-semibold text-slate-900 mb-2">
-            Service scope (declared)
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-              <input
-                type="checkbox"
-                className="rounded border-slate-300"
-                checked={both_services}
-                disabled={isDisabled('both_services')}
-                onChange={(e) => handleToggle('both_services', e.target.checked)}
-              />
-              Residential & commercial listed
-            </label>
-
-            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-              <input
-                type="checkbox"
-                className="rounded border-slate-300"
-                checked={specialist_pests}
-                disabled={isDisabled('specialist_pests')}
-                onChange={(e) => handleToggle('specialist_pests', e.target.checked)}
-              />
-              Wider pest coverage (declared)
-            </label>
-          </div>
-
-          <p className="text-xs text-slate-500 mt-2">
-            Based on services or pest types listed by the provider or source. This does not indicate expertise or specialisation.
-          </p>
-        </div>
-      </div>
-
-      {/* Preferences (not verified) */}
-      <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4">
-        <div className="mb-3">
-          <h3 className="text-sm font-semibold text-slate-900">
-            Preferences (not verified)
-          </h3>
-          <p className="text-xs text-slate-500 mt-1">
-            These preferences aren’t verified in listings. Use them as a checklist when contacting providers.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <label className="flex items-start gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              className="mt-1 rounded border-slate-300"
-              checked={prefs.returnVisits}
-              onChange={() => togglePref('returnVisits')}
-            />
-            <span className="text-sm text-slate-700">
-              Prefer providers that offer return visits / follow-up
-            </span>
-          </label>
-
-          <label className="flex items-start gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              className="mt-1 rounded border-slate-300"
-              checked={prefs.priceTransparency}
-              onChange={() => togglePref('priceTransparency')}
-            />
-            <span className="text-sm text-slate-700">
-              Prefer clear pricing upfront (price transparency)
-            </span>
-          </label>
-
-          <label className="flex items-start gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              className="mt-1 rounded border-slate-300"
-              checked={prefs.freeQuote}
-              onChange={() => togglePref('freeQuote')}
-            />
-            <span className="text-sm text-slate-700">
-              Prefer free quote / inspection (where available)
-            </span>
-          </label>
-
-          <label className="flex items-start gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              className="mt-1 rounded border-slate-300"
-              checked={prefs.calloutFeeClarity}
-              onChange={() => togglePref('calloutFeeClarity')}
-            />
-            <span className="text-sm text-slate-700">Prefer call-out fee clarity</span>
-          </label>
-
-          <label className="flex items-start gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              className="mt-1 rounded border-slate-300"
-              checked={prefs.eveningWeekend}
-              onChange={() => togglePref('eveningWeekend')}
-            />
-            <span className="text-sm text-slate-700">Prefer evening / weekend availability</span>
-          </label>
-
-          <label className="flex items-start gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              className="mt-1 rounded border-slate-300"
-              checked={prefs.discreetService}
-              onChange={() => togglePref('discreetService')}
-            />
-            <span className="text-sm text-slate-700">
-              Prefer discreet attendance (if needed)
-            </span>
-          </label>
-
-          <label className="flex items-start gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              className="mt-1 rounded border-slate-300"
-              checked={prefs.writtenReport}
-              onChange={() => togglePref('writtenReport')}
-            />
-            <span className="text-sm text-slate-700">
-              Prefer written service report after treatment
-            </span>
-          </label>
-        </div>
-
-        {/* Call script */}
-        <div className="mt-4 rounded-md bg-slate-50 border border-slate-200 p-3">
-          <div className="text-xs font-semibold text-slate-800 mb-1">
-            Quick call script
-          </div>
-
-          {selectedPrefQuestions.length === 0 ? (
-            <p className="text-xs text-slate-600">
-              Select preferences above to generate a checklist of questions to ask during your first call.
-            </p>
-          ) : (
-            <ol className="list-decimal ml-4 space-y-1 text-xs text-slate-700">
-              {selectedPrefQuestions.map((qq, idx) => (
-                <li key={idx}>{qq}</li>
-              ))}
-            </ol>
-          )}
-
-          <p className="text-[11px] text-slate-500 mt-2">
-            Tip: write down answers from 2–3 providers before choosing.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
+  console.log(`OK: built ${providers.length} providers`);
+  console.log(`Wrote: ${OUT_PATH}`);
+  console.log(`Report: ${REPORT_PATH}`);
 }
+
+main();
