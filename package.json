@@ -2,12 +2,13 @@
   "name": "pestpro-index-london-v1",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
+"scripts": {
+  "dev": "next dev",
+  "prebuild": "node scripts/buildProvidersFromListings.mjs",
+  "build": "next build",
+  "start": "next start",
+  "lint": "eslint"
+},
   "dependencies": {
     "clsx": "^2.1.1",
     "lucide-react": "^0.562.0",
