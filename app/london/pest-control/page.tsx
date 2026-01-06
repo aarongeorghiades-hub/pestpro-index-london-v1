@@ -13,7 +13,9 @@ function asBool(v: unknown): boolean {
 }
 
 function asStr(v: unknown): string {
-  return typeof v === 'string' ? v.trim() : '';
+  if (typeof v === 'string') return v.trim();
+  if (Array.isArray(v)) return typeof v[0] === 'string' ? v[0].trim() : '';
+  return '';
 }
 
 function normalizeText(s: string): string {
@@ -26,7 +28,6 @@ function emailHasNonGenericDomain(email: string | null): boolean {
   if (at === -1) return false;
   const domain = email.slice(at + 1).toLowerCase().trim();
 
-  // Keep this simple and defensible
   const generic = new Set([
     'gmail.com',
     'googlemail.com',
@@ -60,7 +61,6 @@ function providerSignals(p: Provider) {
   const pests = Array.isArray(p.pests_supported) ? p.pests_supported : [];
   const pestsNorm = pests.map(normalizePest);
 
-  // Specialist pests: explicit list OR breadth (no quality inference, just scope)
   const hasBedBugs = pestsNorm.includes('bed bugs');
   const hasCockroaches = pestsNorm.includes('cockroaches');
   const specialist_pests = hasBedBugs || hasCockroaches || pestsNorm.length >= 5;
@@ -69,81 +69,50 @@ function providerSignals(p: Provider) {
   const phone_and_website = has_phone && has_website;
   const email_domain_present = emailHasNonGenericDomain(p.email);
 
-  // Follow-up & pricing signals rely on explicit profile_text (if available)
   const text = normalizeText(p.profile_text || '');
   const mentions_follow_up =
-    Boolean(text) &&
-    (text.includes('follow up') ||
-      text.includes('follow-up') ||
-      text.includes('followup') ||
-      text.includes('return visit') ||
-      text.includes('re-treatment') ||
-      text.includes('retreatment') ||
-      text.includes('repeat treatment') ||
-      text.includes('follow up visit') ||
-      text.includes('follow-up visit'));
+    text.includes('follow up') ||
+    text.includes('follow-up') ||
+    text.includes('return visit');
 
   const mentions_pricing =
-    Boolean(text) &&
-    (text.includes('price') ||
-      text.includes('pricing') ||
-      text.includes('from £') ||
-      text.includes('from£') ||
-      text.includes('cost') ||
-      text.includes('rates'));
+    text.includes('price') ||
+    text.includes('pricing') ||
+    text.includes('from £') ||
+    text.includes('cost');
 
-  const mentions_callout_fee =
-    Boolean(text) &&
-    (text.includes('call-out fee') ||
-      text.includes('call out fee') ||
-      text.includes('callout fee'));
+  const mentions_callout_fee = text.includes('call-out fee') || text.includes('callout fee');
+  const mentions_free_quote = text.includes('free quote') || text.includes('free inspection');
 
-  const mentions_free_quote =
-    Boolean(text) &&
-    (text.includes('free quote') ||
-      text.includes('free quotation') ||
-      text.includes('free inspection') ||
-      text.includes('no obligation quote') ||
-      text.includes('no-obligation quote'));
-
-  // Listings & associations rely on explicit sources[] (if available)
   const sources = Array.isArray(p.sources) ? p.sources : [];
   const sourcesNorm = sources.map((s) => s.toUpperCase().trim()).filter(Boolean);
   const association_listed = sourcesNorm.includes('BPCA') || sourcesNorm.includes('NPTA');
   const multi_source = sourcesNorm.length >= 2;
 
   return {
-    // Group 1
     has_phone,
     has_website,
     has_email,
     has_any_contact,
     emergency_callout: p.emergency_callout === true,
 
-    // Group 2
     has_postcode,
     has_address,
 
-    // Group 3
     residential,
     commercial,
     both_services,
     specialist_pests,
 
-    // Group 4
     mentions_follow_up,
-
-    // Group 5
     mentions_pricing,
     mentions_callout_fee,
     mentions_free_quote,
 
-    // Group 6
     multiple_contact_methods,
     phone_and_website,
     email_domain_present,
 
-    // Group 7
     association_listed,
     multi_source,
   };
@@ -162,39 +131,44 @@ function countSignals(providers: Provider[]) {
   return counts as Record<SignalKey, number>;
 }
 
+/**
+ * Option B (locked): show a fixed pest list in the dropdown,
+ * even if some pests have 0 matches in our data.
+ * This avoids a "substandard dropdown" that changes based on scrape completeness.
+ */
+const PEST_OPTIONS = [
+  'rats',
+  'mice',
+  'bed bugs',
+  'cockroaches',
+  'ants',
+  'fleas',
+  'wasps',
+  'silverfish',
+  'moths',
+  'carpet beetles',
+  'flies',
+  'spiders',
+  'birds',
+  'squirrels',
+] as const;
+
+const PEST_SET = new Set(PEST_OPTIONS.map((p) => normalizePest(p)));
+
 export async function generateMetadata({
   searchParams,
 }: {
   searchParams: SearchParams;
 }): Promise<Metadata> {
-const params = searchParams;
+  const params = searchParams;
 
-  // Any active filter => noindex (canonical remains /london/pest-control)
   const hasAny =
     Boolean(asStr(params.q) || asStr(params.pest) || asStr(params.type)) ||
-    asBool(params.emergency) ||
-    asBool(params.has_phone) ||
-    asBool(params.has_website) ||
-    asBool(params.has_email) ||
-    asBool(params.has_any_contact) ||
-    asBool(params.has_postcode) ||
-    asBool(params.has_address) ||
-    asBool(params.both_services) ||
-    asBool(params.specialist_pests) ||
-    asBool(params.mentions_follow_up) ||
-    asBool(params.mentions_pricing) ||
-    asBool(params.mentions_callout_fee) ||
-    asBool(params.mentions_free_quote) ||
-    asBool(params.multiple_contact_methods) ||
-    asBool(params.phone_and_website) ||
-    asBool(params.email_domain_present) ||
-    asBool(params.association_listed) ||
-    asBool(params.multi_source);
+    Object.values(params).some((v) => v === 'true');
 
   return {
     title: 'All Pest Control Providers London | PestPro Index',
-    description:
-      'Browse the London pest control directory. Filter by need, then contact providers directly.',
+    description: 'Browse the London pest control directory. Filter by need, then contact providers directly.',
     alternates: { canonical: '/london/pest-control' },
     robots: hasAny ? { index: false, follow: true } : { index: true, follow: true },
   };
@@ -202,27 +176,43 @@ const params = searchParams;
 
 export default async function PestControlPage({ searchParams }: { searchParams: SearchParams }) {
   const params = searchParams;
-
   const allProviders = getDirectoryProviders();
 
-  // Counts to drive UI (disable filters that would return 0)
+  const pestOptions = [...PEST_OPTIONS, 'other'];
+
   const signalCounts = countSignals(allProviders);
 
-  // Apply filters
   let filtered = allProviders;
 
-  // Existing filters
   const q = asStr(params.q).toLowerCase();
-  if (q) {
-    filtered = filtered.filter((p) => (p.name || '').toLowerCase().includes(q));
-  }
+  if (q) filtered = filtered.filter((p) => (p.name || '').toLowerCase().includes(q));
 
-  const pest = normalizePest(asStr(params.pest).toLowerCase());
-  if (pest) {
-    filtered = filtered.filter((p) => {
-      const pests = Array.isArray(p.pests_supported) ? p.pests_supported : [];
-      return pests.map(normalizePest).includes(pest);
-    });
+  const pestParamRaw = normalizePest(asStr(params.pest));
+
+  /**
+   * Pest filtering rules:
+   * - If pest is one of our canonical pests: match providers that explicitly list it.
+   * - If pest is "other": match providers with either:
+   *    a) no pests_supported at all, OR
+   *    b) pests_supported present but none are in our canonical list
+   */
+  if (pestParamRaw) {
+    if (pestParamRaw === 'other') {
+      filtered = filtered.filter((p) => {
+        const pests = Array.isArray(p.pests_supported) ? p.pests_supported : [];
+        if (pests.length === 0) return true;
+        const norm = pests.map(normalizePest).filter(Boolean);
+        return norm.length > 0 && norm.every((x) => !PEST_SET.has(x));
+      });
+    } else if (PEST_SET.has(pestParamRaw)) {
+      filtered = filtered.filter((p) => {
+        const pests = Array.isArray(p.pests_supported) ? p.pests_supported : [];
+        return pests.map(normalizePest).includes(pestParamRaw);
+      });
+    } else {
+      // If someone manually types a weird URL param, ignore it rather than "mystery filter".
+      // (Dropdown won't produce this anyway.)
+    }
   }
 
   const type = asStr(params.type);
@@ -231,43 +221,15 @@ export default async function PestControlPage({ searchParams }: { searchParams: 
 
   if (asBool(params.emergency)) filtered = filtered.filter((p) => p.emergency_callout === true);
 
-  // Expanded filters: computed signals
   const applySignal = (key: SignalKey) => {
     if (asBool((params as any)[key])) {
       filtered = filtered.filter((p) => providerSignals(p)[key] === true);
     }
   };
 
-  // Group 1
-  applySignal('has_phone');
-  applySignal('has_website');
-  applySignal('has_email');
-  applySignal('has_any_contact');
-
-  // Group 2
-  applySignal('has_postcode');
-  applySignal('has_address');
-
-  // Group 3
-  applySignal('both_services');
-  applySignal('specialist_pests');
-
-  // Group 4
-  applySignal('mentions_follow_up');
-
-  // Group 5
-  applySignal('mentions_pricing');
-  applySignal('mentions_callout_fee');
-  applySignal('mentions_free_quote');
-
-  // Group 6
-  applySignal('multiple_contact_methods');
-  applySignal('phone_and_website');
-  applySignal('email_domain_present');
-
-  // Group 7
-  applySignal('association_listed');
-  applySignal('multi_source');
+  Object.keys(providerSignals(allProviders[0] || ({} as Provider))).forEach((k) =>
+    applySignal(k as SignalKey)
+  );
 
   return (
     <main className="min-h-screen bg-slate-50 py-12 px-4">
@@ -279,11 +241,12 @@ export default async function PestControlPage({ searchParams }: { searchParams: 
 
           <h1 className="text-3xl font-bold text-slate-900">London pest control providers</h1>
           <p className="text-slate-600 mt-2">
-            Browse {allProviders.length} listed providers serving Greater London. Use filters below, then contact providers directly.
+            Browse {allProviders.length} listed providers serving Greater London. Use filters below,
+            then contact providers directly.
           </p>
         </div>
 
-        <FilterBar counts={signalCounts} />
+        <FilterBar counts={signalCounts} pestOptions={pestOptions} />
 
         <div className="mb-4 text-sm text-slate-500">
           Showing {filtered.length} provider{filtered.length === 1 ? '' : 's'}
