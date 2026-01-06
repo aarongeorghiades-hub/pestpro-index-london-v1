@@ -175,7 +175,7 @@ export async function generateMetadata({
 }
 
 export default async function PestControlPage({ searchParams }: { searchParams: SearchParams }) {
-  const params = searchParams;
+  const params = await searchParams;
   const allProviders = getDirectoryProviders();
 
   const pestOptions = [...PEST_OPTIONS, 'other'];
