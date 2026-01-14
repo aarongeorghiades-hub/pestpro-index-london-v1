@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 
@@ -99,10 +100,15 @@ const SERVICE_FILTERS = [
 // ============================================================================
 
 function getProviderTier(provider: Provider): 'featured' | 'high-rated' | 'regular' {
+  // Featured: Manually marked (you'll add this later)
+  if ((provider as any).is_featured) return 'featured';
+  
+  // High-rated: 4.5+ rating AND 30+ reviews
   if (provider.google_rating && provider.google_review_count && 
       provider.google_rating >= 4.5 && provider.google_review_count >= 30) {
     return 'high-rated';
   }
+  
   return 'regular';
 }
 
@@ -112,15 +118,19 @@ function getProviderTier(provider: Provider): 'featured' | 'high-rated' | 'regul
 
 function ProviderCard({ provider }: { provider: Provider }) {
   const tier = getProviderTier(provider);
-  const isFeatured = tier === 'featured';
   const showTrophy = tier === 'high-rated' || tier === 'featured';
+  const borderColor = tier === 'featured' ? 'border-yellow-400' : 'border-blue-500';
   
   return (
-    <div className={`
-      relative bg-white rounded-lg overflow-hidden
-      border-l-4 transition-all duration-300 hover:shadow-xl
-      ${isFeatured ? 'border-yellow-400 shadow-lg' : 'border-blue-500 shadow-md'}
-    `}>
+    <div className={`relative bg-white rounded-lg overflow-hidden border-l-4 ${borderColor} shadow-md hover:shadow-lg transition-all`}>
+      
+      {/* Featured badge - only for featured */}
+      {tier === 'featured' && (
+        <div className="absolute top-0 left-0 bg-yellow-400 text-gray-900 px-3 py-1 text-xs font-bold rounded-br-lg">
+          FEATURED
+        </div>
+      )}
+      
       <div className="flex">
         {/* LEFT SECTION - Main content */}
         <div className="flex-1 p-6">
@@ -286,45 +296,15 @@ export default function ResidentialPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-20">
             
-            {/* LOGO - WHITE BACKGROUND WITH BUG */}
-            <Link href="/" className="flex items-center">
-              <div className="bg-white rounded-3xl px-6 py-4 flex items-center gap-3 shadow-lg border border-gray-200">
-                
-                {/* Magnifying glass with bug */}
-                <div className="relative w-16 h-16">
-                  <svg viewBox="0 0 64 64" className="w-full h-full">
-                    {/* Outer ring */}
-                    <circle cx="24" cy="24" r="18" fill="none" stroke="#374151" strokeWidth="3"/>
-                    {/* Lens background */}
-                    <circle cx="24" cy="24" r="15" fill="#F3F4F6"/>
-                    
-                    {/* Bug inside */}
-                    <g transform="translate(24, 24)">
-                      <ellipse cx="0" cy="0" rx="7" ry="9" fill="#1F2937"/>
-                      <circle cx="0" cy="-6" r="4" fill="#1F2937"/>
-                      <line x1="-5" y1="-3" x2="-10" y2="-5" stroke="#1F2937" strokeWidth="2" strokeLinecap="round"/>
-                      <line x1="-5" y1="0" x2="-10" y2="0" stroke="#1F2937" strokeWidth="2" strokeLinecap="round"/>
-                      <line x1="-5" y1="3" x2="-10" y2="5" stroke="#1F2937" strokeWidth="2" strokeLinecap="round"/>
-                      <line x1="5" y1="-3" x2="10" y2="-5" stroke="#1F2937" strokeWidth="2" strokeLinecap="round"/>
-                      <line x1="5" y1="0" x2="10" y2="0" stroke="#1F2937" strokeWidth="2" strokeLinecap="round"/>
-                      <line x1="5" y1="3" x2="10" y2="5" stroke="#1F2937" strokeWidth="2" strokeLinecap="round"/>
-                      <line x1="-2" y1="-8" x2="-3" y2="-11" stroke="#1F2937" strokeWidth="1.5" strokeLinecap="round"/>
-                      <line x1="2" y1="-8" x2="3" y2="-11" stroke="#1F2937" strokeWidth="1.5" strokeLinecap="round"/>
-                    </g>
-                    
-                    {/* Handle */}
-                    <g transform="rotate(45 40 40)">
-                      <rect x="36" y="32" width="8" height="24" rx="4" fill="#374151"/>
-                    </g>
-                  </svg>
-                </div>
-                
-                {/* Text */}
-                <div className="leading-tight">
-                  <div className="text-2xl font-bold text-gray-900">PestPro</div>
-                  <div className="text-sm text-gray-500 font-medium">Index</div>
-                </div>
-              </div>
+            {/* LOGO - EXACT HOMEPAGE VERSION */}
+            <Link href="/" className="flex items-center bg-white rounded-full px-6 py-3" style={{width: '210px', height: '70px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+              <Image
+                src="/pestpro-logo.png"
+                alt="PestPro Index"
+                width={120}
+                height={60}
+                className="h-auto"
+              />
             </Link>
 
             {/* NAVIGATION PILLS */}
@@ -493,4 +473,3 @@ export default function ResidentialPage() {
     </div>
   );
 }
-// Trigger GitHub deployment
