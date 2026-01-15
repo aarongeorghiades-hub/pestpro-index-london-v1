@@ -336,7 +336,7 @@ export default function ResidentialPage() {
             <img 
               src="/london-skyline.png" 
               alt="London skyline" 
-              className="w-full h-full object-cover opacity-40"
+              className="w-full h-full object-cover opacity-50"
             />
           </div>
           <div className="absolute inset-0 bg-gradient-to-br from-blue-900/75 via-blue-800/70 to-blue-900/75"></div>
