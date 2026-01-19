@@ -1,5 +1,4 @@
 'use client';
-export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
@@ -210,118 +209,34 @@ export default function CommercialPage() {
       {/* FEATURED PROVIDERS */}
       <section className="max-w-7xl mx-auto px-4 py-12">
         <h2 className="text-4xl font-black mb-2">Featured Providers</h2>
-        <p className="text-gray-600 mb-8">Trusted partners for commercial pest management</p>
+        <p className="text-gray-600 mb-8">
+          Top-rated commercial pest control providers with verified certifications
+        </p>
         <div className="grid grid-cols-4 gap-6">
-          {providers.slice(0, 8).map((provider) => (
-            <div
-              key={provider.provider_id}
-              className="border-2 border-amber-400 rounded-xl p-6 bg-white shadow-lg hover:shadow-xl transition-shadow"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <h3 className="font-black text-lg">{provider.provider_name}</h3>
-                {provider.quality_score >= 30 && <span className="text-2xl">⭐</span>}
-              </div>
-              <p className="text-sm text-gray-600 mb-4">{provider.quality_score} Certifications</p>
-              {provider.website && (
-                <Link
-                  href={provider.website}
-                  target="_blank"
-                  className="inline-block px-4 py-2 bg-[#2563eb] text-white rounded-lg text-sm font-semibold hover:bg-[#1e40af]"
-                >
-                  Visit Website
-                </Link>
-              )}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* PDF GUIDES */}
-      <section className="max-w-7xl mx-auto px-4 py-12">
-        <h2 className="text-4xl font-black mb-8">Commercial Guides</h2>
-        <div className="grid grid-cols-2 gap-8">
-          <div className="bg-white border-2 border-gray-200 rounded-xl p-8">
-            <h3 className="text-2xl font-black mb-2">Commercial Provider Selection Guide</h3>
-            <p className="text-sm text-gray-600 mb-4">For Property Managers</p>
-            <p className="text-3xl font-black text-amber-400 mb-4">£14.99</p>
-            <p className="text-gray-700 mb-6">
-              Step-by-step guide to selecting the right commercial pest control provider for multi-unit properties and commercial portfolios.
-            </p>
-            <ul className="space-y-2 mb-6">
-              <li className="flex items-start gap-2">
-                <span className="text-amber-400 font-black">•</span>
-                <span>Certification requirements to look for</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-amber-400 font-black">•</span>
-                <span>Contract evaluation frameworks</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-amber-400 font-black">•</span>
-                <span>RFP templates and checklists</span>
-              </li>
-            </ul>
-            <Link
-              href="https://pestproindex.lemonsqueezy.com/checkout/buy/8d8b4f4a-a913-48b3-bf8d-dfcaf6fcb5d6"
-              target="_blank"
-              className="inline-block px-6 py-3 bg-amber-400 text-black rounded-lg font-semibold hover:bg-amber-500"
-            >
-              Get the Guide - £14.99
-            </Link>
-          </div>
-
-          <div className="bg-white border-2 border-gray-200 rounded-xl p-8">
-            <h3 className="text-2xl font-black mb-2">Compliance Workbook</h3>
-            <p className="text-sm text-gray-600 mb-4">For Small Business Owners</p>
-            <p className="text-3xl font-black text-amber-400 mb-4">£29.99</p>
-            <p className="text-gray-700 mb-6">
-              Essential compliance requirements for commercial pest control in London.
-            </p>
-            <ul className="space-y-2 mb-6">
-              <li className="flex items-start gap-2">
-                <span className="text-amber-400 font-black">•</span>
-                <span>Regulatory compliance checklist</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-amber-400 font-black">•</span>
-                <span>Documentation templates</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-amber-400 font-black">•</span>
-                <span>Audit preparation guide</span>
-              </li>
-            </ul>
-            <Link
-              href="https://pestproindex.lemonsqueezy.com/checkout/buy/8d8b4f4a-a913-48b3-bf8d-dfcaf6fcb5d6"
-              target="_blank"
-              className="inline-block px-6 py-3 bg-amber-400 text-black rounded-lg font-semibold hover:bg-amber-500"
-            >
-              Get the Workbook - £29.99
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* PRODUCTS SECTION */}
-      <section className="max-w-7xl mx-auto px-4 py-12">
-        <h2 className="text-4xl font-black mb-8">Products</h2>
-        <div className="grid grid-cols-3 gap-8">
-          {[
-            { title: 'Professional Equipment', desc: 'Traps, solutions, proofing, sprayers' },
-            { title: 'Monitoring Systems', desc: 'Real-time tracking and alerts' },
-            { title: 'Compliance & Documentation', desc: 'Templates and audit tools' },
-          ].map((product) => (
-            <div key={product.title} className="border-2 border-gray-200 rounded-xl p-6">
-              <h3 className="text-xl font-black mb-2">{product.title}</h3>
-              <p className="text-gray-600 mb-4">{product.desc}</p>
-              <Link
-                href="/residential"
-                className="inline-block px-4 py-2 bg-[#2563eb] text-white rounded-lg text-sm font-semibold hover:bg-[#1e40af]"
+          {providers
+            .filter((p) => p.quality_score >= 40)
+            .slice(0, 4)
+            .map((provider) => (
+              <div
+                key={provider.provider_id}
+                className="border-2 border-[#2563eb] rounded-xl p-6 bg-gradient-to-br from-white to-blue-50 shadow-lg"
               >
-                View Products →
-              </Link>
-            </div>
-          ))}
+                <div className="flex items-start justify-between mb-3">
+                  <h3 className="font-black text-lg">{provider.provider_name}</h3>
+                  <span className="text-2xl">🏆</span>
+                </div>
+                <p className="text-sm text-gray-600 mb-4">{provider.quality_score} Certifications</p>
+                {provider.website && (
+                  <Link
+                    href={provider.website}
+                    target="_blank"
+                    className="inline-block px-4 py-2 bg-[#2563eb] text-white rounded-lg text-sm font-semibold hover:bg-[#1e40af]"
+                  >
+                    Visit Website
+                  </Link>
+                )}
+              </div>
+            ))}
         </div>
       </section>
 
