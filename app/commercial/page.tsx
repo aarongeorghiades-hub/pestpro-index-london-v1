@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@/utils/supabase/client';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
